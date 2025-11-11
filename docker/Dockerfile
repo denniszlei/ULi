@@ -66,7 +66,8 @@ COPY backend/ ./backend/
 COPY scripts/ ./scripts/
 
 # 从前端构建阶段复制静态文件
-COPY --from=frontend-builder /app/frontend/dist ./backend/static
+# 注意：vite.config.js配置输出到../backend/static，所以实际路径是/app/backend/static
+COPY --from=frontend-builder /app/backend/static ./backend/static
 
 # 复制配置文件示例
 COPY config/ ./config/
