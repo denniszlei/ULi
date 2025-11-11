@@ -11,7 +11,9 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 
 # 安装依赖（包括开发依赖用于构建）
-RUN npm ci
+# 注意：使用 npm install 而不是 npm ci，因为项目中没有 package-lock.json
+# 如果需要更严格的依赖版本控制，建议生成 package-lock.json 并使用 npm ci
+RUN npm install
 
 # 复制前端源码
 COPY frontend/ ./

@@ -22,6 +22,16 @@
 - Docker Compose 2.0+
 - 至少2GB可用内存
 - 至少5GB可用磁盘空间
+- Node.js 18+ (仅在需要生成package-lock.json时)
+
+**关于前端依赖**：
+- 项目Dockerfile已配置为使用`npm install`而非`npm ci`，因此不强制要求`package-lock.json`文件
+- 如果需要更严格的依赖版本控制，可以生成`package-lock.json`：
+  ```bash
+  cd frontend
+  npm install  # 会自动生成package-lock.json
+  ```
+- 生成lock文件后，可以修改Dockerfile将`npm install`改回`npm ci`以获得更快的构建速度和更好的可重复性
 
 ### 一键部署
 
