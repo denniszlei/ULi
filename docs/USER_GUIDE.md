@@ -112,14 +112,13 @@ vim .env  # 或使用其他编辑器
 主要配置项：
 
 ```bash
-# 服务模式（internal: 容器内运行，external: 外部服务）
-GPT_LOAD_MODE=internal
-UNI_API_MODE=internal
-
 # 端口配置
 UNI_LOAD_PORT=8080
 GPT_LOAD_PORT=3001
 UNI_API_PORT=8000
+
+# gpt-load认证密钥（务必修改为强密码）
+GPT_LOAD_AUTH_KEY=sk-gptload-change-this-key-to-strong-password
 
 # 数据库路径
 DATABASE_URL=sqlite:////app/data/uni-load.db
@@ -127,6 +126,11 @@ DATABASE_URL=sqlite:////app/data/uni-load.db
 # 加密密钥（生产环境务必修改）
 ENCRYPTION_KEY=your-encryption-key-here-change-in-production
 ```
+
+**重要说明**：
+- gpt-load和uni-api使用官方Docker镜像独立部署
+- 三个服务通过Docker网络互联
+- 配置更新后需要重启gpt-load和uni-api服务
 
 **步骤4：启动服务**
 
@@ -465,28 +469,38 @@ providers:
 
 ### 3.6 应用配置
 
-#### 自动应用（推荐）
+#### 应用配置
 
-点击"应用配置"按钮，系统会自动：
+点击"应用配置"按钮后，系统会：
 
-1. 将配置写入gpt-load和uni-api的配置文件
-2. 触发服务重新加载配置
-3. 验证配置是否生效
+1. 将配置保存到共享目录
+2. 检查gpt-load和uni-api服务状态
+3. **提示需要重启服务**
 
-#### 手动应用
-
-如果使用外部的gpt-load和uni-api服务：
-
-1. 下载配置文件
-2. 手动复制到对应服务的配置目录
-3. 重启服务
+**重要**：gpt-load和uni-api都不支持配置热重载，必须重启服务：
 
 ```bash
-# 重启gpt-load
-systemctl restart gpt-load
+# 方法1：重启所有服务
+docker-compose restart gpt-load uni-api
 
-# 重启uni-api
-systemctl restart uni-api
+# 方法2：仅重启特定服务
+docker-compose restart gpt-load  # 仅重启gpt-load
+docker-compose restart uni-api   # 仅重启uni-api
+```
+
+#### 验证配置
+
+重启后验证配置是否生效：
+
+```bash
+# 检查gpt-load健康状态
+curl http://localhost:3001/health
+
+# 检查uni-api
+curl http://localhost:8000/
+
+# 测试模型访问
+curl http://localhost:8000/v1/models
 ```
 
 ### 3.7 使用统一API

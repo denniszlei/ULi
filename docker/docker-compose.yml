@@ -1,6 +1,57 @@
 version: '3.8'
 
 services:
+  # gpt-load服务 - 使用官方镜像
+  gpt-load:
+    image: ghcr.io/tbphp/gpt-load:latest
+    container_name: gpt-load
+    restart: unless-stopped
+    ports:
+      - "${GPT_LOAD_PORT:-3001}:3001"
+    volumes:
+      - ./data/gpt-load:/app/data
+    environment:
+      - PORT=3001
+      - HOST=0.0.0.0
+      - TZ=Asia/Shanghai
+      - AUTH_KEY=${GPT_LOAD_AUTH_KEY:-sk-gptload-change-this-key}
+      - DATABASE_DSN=
+      - REDIS_DSN=
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - LOG_ENABLE_FILE=true
+      - LOG_FILE_PATH=/app/data/logs/app.log
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "-T", "10", "-O", "/dev/null", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - uni-load-network
+
+  # uni-api服务 - 使用官方镜像
+  uni-api:
+    image: yym68686/uni-api:latest
+    container_name: uni-api
+    restart: unless-stopped
+    ports:
+      - "${UNI_API_PORT:-8000}:8000"
+    volumes:
+      - ./data/config/api.yaml:/home/api.yaml
+      - ./data/uni-api:/home/data
+    environment:
+      - TZ=Asia/Shanghai
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - uni-load-network
+
+  # uni-load-improved服务 - 配置管理界面
   uni-load-improved:
     build:
       context: ..
@@ -10,14 +61,15 @@ services:
     image: uni-load-improved:latest
     container_name: uni-load-improved
     restart: unless-stopped
-    
+    depends_on:
+      gpt-load:
+        condition: service_healthy
+      uni-api:
+        condition: service_healthy
     ports:
-      - "${UNI_LOAD_PORT:-8080}:8080"  # uni-load-improved Web UI
-      - "${GPT_LOAD_PORT:-3001}:3001"  # gpt-load
-      - "${UNI_API_PORT:-8000}:8000"   # uni-api
-    
+      - "${UNI_LOAD_PORT:-8080}:8080"
     volumes:
-      # 配置文件
+      # 配置文件（与gpt-load和uni-api共享）
       - ./data/config:/app/config
       # 数据持久化
       - ./data/db:/app/data
@@ -25,20 +77,16 @@ services:
       - ./data/logs:/app/logs
       # 备份
       - ./data/backups:/app/backups
-    
     environment:
       # 基础配置
       - UNI_LOAD_HOST=0.0.0.0
       - UNI_LOAD_PORT=8080
       - UNI_LOAD_DEBUG=${DEBUG:-false}
       
-      # 服务模式 (internal | external)
-      - GPT_LOAD_MODE=${GPT_LOAD_MODE:-internal}
-      - UNI_API_MODE=${UNI_API_MODE:-internal}
-      
-      # 外部服务URL（仅在external模式下使用）
-      - GPT_LOAD_URL=${GPT_LOAD_URL:-http://localhost:3001}
-      - UNI_API_URL=${UNI_API_URL:-http://localhost:8000}
+      # 服务URL（指向容器内部服务）
+      - GPT_LOAD_URL=http://gpt-load:3001
+      - UNI_API_URL=http://uni-api:8000
+      - GPT_LOAD_AUTH_KEY=${GPT_LOAD_AUTH_KEY:-sk-gptload-change-this-key}
       
       # 数据库配置
       - DATABASE_URL=${DATABASE_URL:-sqlite:////app/data/uni-load.db}

@@ -24,7 +24,8 @@ echo "=========================================="
 echo "  uni-load-improved Container Starting"
 echo "=========================================="
 log_info "Version: 1.0.0"
-log_info "Mode: ${GPT_LOAD_MODE:-internal} (gpt-load) | ${UNI_API_MODE:-internal} (uni-api)"
+log_info "gpt-load URL: ${GPT_LOAD_URL:-http://gpt-load:3001}"
+log_info "uni-api URL: ${UNI_API_URL:-http://uni-api:8000}"
 echo ""
 
 # 检查并创建必要的目录
@@ -64,12 +65,7 @@ python scripts/migrate.py || log_warn "Migration failed or not needed"
 # 根据命令参数决定启动方式
 case "${1:-start}" in
     start)
-        log_info "Starting all services with supervisord..."
-        exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
-        ;;
-    
-    backend-only)
-        log_info "Starting backend service only..."
+        log_info "Starting uni-load-improved backend service..."
         cd /app/backend
         exec uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers ${WORKERS:-4}
         ;;

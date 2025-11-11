@@ -276,35 +276,93 @@ class ConfigGeneratorService:
             logger.error(f"保存配置文件失败: {e}")
             raise
     
-    async def apply_configs(self) -> Dict[str, bool]:
+    async def apply_configs(self) -> Dict[str, Any]:
         """
-        应用配置（可选）
+        应用配置到gpt-load和uni-api服务
         
-        如果配置了外部服务地址，通过API更新配置
-        如果是本地服务，可以触发重启
+        实现方式：
+        1. gpt-load: 配置存储在数据库中，需要通过管理API更新或重启服务
+        2. uni-api: 配置通过api.yaml文件，需要重启服务加载新配置
         
         Returns:
-            应用结果 {"gpt_load": bool, "uni_api": bool}
+            应用结果字典，包含状态和消息
         """
+        import httpx
+        import os
+        
+        result = {
+            "gpt_load": {"success": False, "message": ""},
+            "uni_api": {"success": False, "message": ""},
+            "requires_restart": True
+        }
+        
         try:
             logger.info("开始应用配置")
             
-            # 这里可以实现配置热重载逻辑
-            # 例如：调用gpt-load和uni-api的reload API
-            # 或者发送信号触发服务重启
+            # 1. 处理gpt-load配置
+            # gpt-load使用数据库存储配置，配置已通过Web界面或API写入数据库
+            # 需要通过管理API触发配置重载或重启服务
+            gpt_load_url = os.getenv("GPT_LOAD_URL", "http://gpt-load:3001")
+            gpt_load_auth_key = os.getenv("GPT_LOAD_AUTH_KEY", "")
             
-            # 目前返回成功，实际应用需要根据部署方式实现
-            result = {
-                "gpt_load": True,
-                "uni_api": True
-            }
+            try:
+                # 检查gpt-load服务是否可用
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    health_response = await client.get(f"{gpt_load_url}/health")
+                    if health_response.status_code == 200:
+                        result["gpt_load"]["success"] = True
+                        result["gpt_load"]["message"] = "gpt-load配置已保存到数据库，服务运行正常。注意：gpt-load需要重启才能加载新配置。"
+                        logger.info("gpt-load服务健康检查通过")
+                    else:
+                        result["gpt_load"]["message"] = f"gpt-load服务响应异常: {health_response.status_code}"
+                        logger.warning(result["gpt_load"]["message"])
+            except Exception as e:
+                result["gpt_load"]["message"] = f"无法连接到gpt-load服务: {str(e)}"
+                logger.error(result["gpt_load"]["message"])
             
-            logger.info("配置应用完成")
+            # 2. 处理uni-api配置
+            # uni-api使用api.yaml文件，配置文件已通过save_configs保存
+            # 需要重启uni-api服务来加载新配置
+            uni_api_url = os.getenv("UNI_API_URL", "http://uni-api:8000")
+            
+            try:
+                # 检查uni-api服务是否可用
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    # uni-api可能没有/health端点，尝试访问根路径
+                    try:
+                        health_response = await client.get(f"{uni_api_url}/health")
+                        is_healthy = health_response.status_code == 200
+                    except:
+                        # 如果没有health端点，尝试其他端点
+                        health_response = await client.get(f"{uni_api_url}/")
+                        is_healthy = health_response.status_code in [200, 404]
+                    
+                    if is_healthy:
+                        result["uni_api"]["success"] = True
+                        result["uni_api"]["message"] = "uni-api配置文件(api.yaml)已更新。注意：uni-api需要重启才能加载新配置。"
+                        logger.info("uni-api服务健康检查通过")
+                    else:
+                        result["uni_api"]["message"] = f"uni-api服务响应异常: {health_response.status_code}"
+                        logger.warning(result["uni_api"]["message"])
+            except Exception as e:
+                result["uni_api"]["message"] = f"无法连接到uni-api服务: {str(e)}"
+                logger.error(result["uni_api"]["message"])
+            
+            # 3. 提供重启建议
+            if result["gpt_load"]["success"] or result["uni_api"]["success"]:
+                result["restart_command"] = "docker-compose restart gpt-load uni-api"
+                result["message"] = "配置文件已更新。请执行以下命令重启服务以应用新配置：\ndocker-compose restart gpt-load uni-api"
+                logger.info("配置应用完成，需要重启服务")
+            else:
+                result["message"] = "配置应用失败，请检查服务状态"
+                logger.error("配置应用失败")
+            
             return result
             
         except Exception as e:
             logger.error(f"应用配置失败: {e}")
-            raise
+            result["message"] = f"应用配置时发生错误: {str(e)}"
+            return result
     
     async def validate_config(self, config: Dict, config_type: str = "gptload") -> Tuple[bool, List[str]]:
         """

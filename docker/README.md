@@ -68,54 +68,45 @@ docker-compose logs uni-load-improved
 
 ## 部署架构
 
-### All-in-One架构
+### 微服务架构（推荐）
 
 ```
-┌─────────────────────────────────────────┐
-│     uni-load-improved Container         │
-│                                         │
-│  ┌──────────────────────────────────┐  │
-│  │   Frontend (Vue.js + Nginx)      │  │
-│  │   Port: 8080                     │  │
-│  └──────────────────────────────────┘  │
-│                                         │
-│  ┌──────────────────────────────────┐  │
-│  │   Backend (FastAPI + Python)     │  │
-│  │   Port: 8080                     │  │
-│  └──────────────────────────────────┘  │
-│                                         │
-│  ┌──────────────────────────────────┐  │
-│  │   gpt-load Service               │  │
-│  │   Port: 3001                     │  │
-│  └──────────────────────────────────┘  │
-│                                         │
-│  ┌──────────────────────────────────┐  │
-│  │   uni-api Service                │  │
-│  │   Port: 8000                     │  │
-│  └──────────────────────────────────┘  │
-│                                         │
-│  ┌──────────────────────────────────┐  │
-│  │   SQLite Database                │  │
-│  │   /app/data/uni-load.db          │  │
-│  └──────────────────────────────────┘  │
-└─────────────────────────────────────────┘
+┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│   gpt-load       │    │   uni-api        │    │ uni-load-improved│
+│   (官方镜像)      │◄───│   (官方镜像)      │◄───│  (配置管理)       │
+│   Port: 3001     │    │   Port: 8000     │    │  Port: 8080      │
+│                  │    │                  │    │                  │
+│  - 负载均衡      │    │  - 统一网关      │    │  - Web UI        │
+│  - 密钥轮询      │    │  - 格式转换      │    │  - 配置生成      │
+│  - 健康检查      │    │  - 模型聚合      │    │  - 模型管理      │
+└──────────────────┘    └──────────────────┘    └──────────────────┘
+         │                       │                       │
+         └───────────────────────┴───────────────────────┘
+                            Docker Network
 ```
 
-### 微服务架构（可选）
+**说明**：
+- **gpt-load**: 使用官方镜像 `ghcr.io/tbphp/gpt-load:latest`
+- **uni-api**: 使用官方镜像 `yym68686/uni-api:latest`
+- **uni-load-improved**: 仅包含配置管理界面和后端
 
-```
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│   Frontend   │    │   Backend    │    │   gpt-load   │
-│   (Nginx)    │───▶│  (FastAPI)   │───▶│              │
-│   Port: 80   │    │  Port: 8080  │    │  Port: 3001  │
-└──────────────┘    └──────────────┘    └──────────────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │   uni-api    │
-                    │  Port: 8000  │
-                    └──────────────┘
-```
+### 架构说明
+
+uni-load-improved采用微服务架构，由三个独立的服务组成：
+
+1. **gpt-load** (Go语言)
+   - 官方项目：https://github.com/tbphp/gpt-load
+   - 功能：智能密钥轮询、负载均衡、健康检查
+   - 配置：通过数据库存储，需要重启服务加载新配置
+
+2. **uni-api** (Python)
+   - 官方项目：https://github.com/yym68686/uni-api
+   - 功能：统一API网关、格式转换、模型聚合
+   - 配置：通过api.yaml文件，需要重启服务加载新配置
+
+3. **uni-load-improved** (Python + Vue.js)
+   - 功能：Web配置界面、自动生成配置、模型管理
+   - 作用：简化gpt-load和uni-api的配置管理
 
 ---
 
@@ -126,14 +117,13 @@ docker-compose logs uni-load-improved
 主要配置文件：`.env`
 
 ```bash
-# 服务模式
-GPT_LOAD_MODE=internal    # internal: 容器内运行, external: 外部服务
-UNI_API_MODE=internal
-
 # 端口配置
-UNI_LOAD_PORT=8080
-GPT_LOAD_PORT=3001
-UNI_API_PORT=8000
+UNI_LOAD_PORT=8080        # uni-load-improved Web UI
+GPT_LOAD_PORT=3001        # gpt-load服务
+UNI_API_PORT=8000         # uni-api服务
+
+# gpt-load认证密钥（务必修改）
+GPT_LOAD_AUTH_KEY=sk-gptload-change-this-key-to-strong-password
 
 # 数据库
 DATABASE_URL=sqlite:////app/data/uni-load.db
@@ -172,23 +162,36 @@ deploy:
 
 ## 部署方式
 
-### 1. All-in-One部署（推荐）
+### 1. 标准部署（推荐）
 
-适用于：单机部署、开发测试环境
+适用于：生产环境、开发测试环境
 
 ```bash
 cd docker
+# 复制并编辑环境变量
+cp .env.example .env
+vim .env  # 修改GPT_LOAD_AUTH_KEY等配置
+
+# 启动所有服务
 docker-compose up -d
+
+# 查看服务状态
+docker-compose ps
 ```
 
-**优点**：
-- 部署简单，一键启动
-- 资源占用少
-- 配置管理方便
+**服务说明**：
+- **gpt-load**: 使用官方Docker镜像，独立运行
+- **uni-api**: 使用官方Docker镜像，独立运行
+- **uni-load-improved**: 配置管理界面，依赖上述两个服务
 
-**缺点**：
-- 扩展性有限
-- 单点故障风险
+**优点**：
+- 使用官方镜像，稳定可靠
+- 服务独立，易于维护和升级
+- 配置清晰，便于调试
+
+**注意事项**：
+- 首次启动需要等待gpt-load和uni-api健康检查通过
+- 修改配置后需要重启对应服务：`docker-compose restart gpt-load uni-api`
 
 ### 2. 独立后端部署
 
@@ -225,19 +228,24 @@ docker run -d \
 
 ### 4. 外部服务集成
 
-连接到外部的gpt-load或uni-api服务。
+如果你已经有运行中的gpt-load或uni-api服务，可以只部署uni-load-improved：
 
 ```bash
+# 修改docker-compose.yml，注释掉gpt-load和uni-api服务
+
 # 修改.env配置
-GPT_LOAD_MODE=external
-GPT_LOAD_URL=http://external-gpt-load:3001
+GPT_LOAD_URL=http://your-gpt-load-server:3001
+UNI_API_URL=http://your-uni-api-server:8000
+GPT_LOAD_AUTH_KEY=your-gpt-load-auth-key
 
-UNI_API_MODE=external
-UNI_API_URL=http://external-uni-api:8000
-
-# 启动服务
-docker-compose up -d
+# 启动uni-load-improved
+docker-compose up -d uni-load-improved
 ```
+
+**注意**：
+- 确保外部服务可访问
+- 配置文件会生成到本地，需要手动复制到外部服务
+- 配置更新后需要手动重启外部服务
 
 ### 5. 多架构构建
 
@@ -362,21 +370,28 @@ docker-compose up -d
 ./deploy.sh status
 ```
 
-### 配置热重载
+### 配置更新
+
+**重要说明**：gpt-load和uni-api都不支持配置热重载，修改配置后必须重启服务。
 
 ```bash
-# 修改配置后重新生成
-docker-compose exec uni-load-improved \
-  python /app/backend/scripts/generate_config.py
+# 方法1：通过Web UI生成并应用配置
+# 1. 在Web UI中修改配置
+# 2. 点击"生成配置"
+# 3. 点击"应用配置"（会提示需要重启）
+# 4. 执行重启命令
 
-# 重载gpt-load配置
-docker-compose exec uni-load-improved \
-  kill -HUP $(pgrep gpt-load)
+# 方法2：手动重启服务
+docker-compose restart gpt-load uni-api
 
-# 重载uni-api配置
-docker-compose exec uni-load-improved \
-  kill -HUP $(pgrep uni-api)
+# 方法3：仅重启特定服务
+docker-compose restart gpt-load  # 仅重启gpt-load
+docker-compose restart uni-api   # 仅重启uni-api
 ```
+
+**配置文件位置**：
+- gpt-load: 配置存储在数据库中（`./data/gpt-load/gpt-load.db`）
+- uni-api: 配置文件 `./data/config/api.yaml`
 
 ---
 

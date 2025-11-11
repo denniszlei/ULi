@@ -35,29 +35,30 @@ UNI_LOAD_HOST=0.0.0.0
 UNI_LOAD_PORT=8080
 ```
 
-### 服务模式配置
+### 服务集成配置
 
 ```bash
-# gpt-load服务模式
-# internal: 在同一容器内运行
-# external: 连接到外部服务
-GPT_LOAD_MODE=internal
+# gpt-load服务URL
+# Docker部署时使用容器名称
+GPT_LOAD_URL=http://gpt-load:3001
 
-# gpt-load服务URL（external模式时使用）
-GPT_LOAD_URL=http://localhost:3001
+# gpt-load认证密钥（务必修改为强密码）
+# 推荐格式: sk-prod-[32位随机字符串]
+GPT_LOAD_AUTH_KEY=sk-gptload-change-this-key-to-strong-password
 
-# gpt-load配置文件路径
-GPT_LOAD_CONFIG_PATH=./config/gpt-load.yaml
+# uni-api服务URL
+# Docker部署时使用容器名称
+UNI_API_URL=http://uni-api:8000
 
-# uni-api服务模式
-UNI_API_MODE=internal
-
-# uni-api服务URL（external模式时使用）
-UNI_API_URL=http://localhost:8000
-
-# uni-api配置文件路径
-UNI_API_CONFIG_PATH=./config/uni-api.yaml
+# 配置文件路径（Docker卷挂载）
+CONFIG_DIR=/app/config
 ```
+
+**重要说明**：
+- gpt-load和uni-api使用官方Docker镜像独立部署
+- gpt-load配置存储在数据库中，不是通过配置文件
+- uni-api配置通过api.yaml文件
+- 配置更新后需要重启对应服务才能生效
 
 ### 数据库配置
 
@@ -166,16 +167,14 @@ server:
 # 集成服务配置
 services:
   gpt_load:
-    mode: "internal"  # internal | external
-    url: "http://localhost:3001"
-    config_path: "/app/config/gpt-load.yaml"
-    api_key: ""  # external模式时需要
+    url: "http://gpt-load:3001"
+    auth_key: ""  # gpt-load的AUTH_KEY
+    health_check_interval: 300
   
   uni_api:
-    mode: "internal"
-    url: "http://localhost:8000"
-    config_path: "/app/config/uni-api.yaml"
-    api_key: ""
+    url: "http://uni-api:8000"
+    config_path: "/app/config/api.yaml"
+    health_check_interval: 300
 
 # 数据库配置
 database:
@@ -264,41 +263,41 @@ monitoring:
 
 ## gpt-load配置
 
-gpt-load配置由系统自动生成，位于`config/gpt-load.yaml`。
+**重要说明**：gpt-load使用数据库存储配置，不是通过YAML文件。
 
-### 配置结构
+### 配置方式
 
-```yaml
-# Provider配置
-providers:
-  - name: openai-main-0
-    base_url: https://api.openai.com/v1
-    api_key: sk-xxx
-    models: [gpt-4]
-    enabled: true
-    priority: 10
-    timeout: 60
-    retry: 3
+1. **通过Web管理界面**（推荐）
+   - 访问 http://localhost:3001
+   - 使用AUTH_KEY登录
+   - 在界面中配置Provider和分组
 
-# 普通分组配置
-groups:
-  - name: openai-main-0
-    providers: [openai-main-0]
-    strategy: fixed_priority
-    health_check: true
+2. **通过uni-load-improved**
+   - uni-load-improved会生成配置数据
+   - 但gpt-load需要通过其管理API或重启来加载
 
-# 聚合分组配置
-aggregate_groups:
-  - name: agg-gpt-4
-    groups: [openai-main-0, azure-backup-0]
-    strategy: smart_round_robin
-    fallback: true
-    health_check: true
+### 配置存储
 
-# 模型重定向配置
-model_redirects:
-  gpt-4: agg-gpt-4
-  gpt-3.5-turbo: agg-gpt-3.5-turbo
+```bash
+# gpt-load配置存储位置
+./data/gpt-load/gpt-load.db  # SQLite数据库
+
+# 环境变量配置
+PORT=3001
+AUTH_KEY=your-auth-key
+DATABASE_DSN=  # 留空使用SQLite
+```
+
+### 配置更新流程
+
+1. uni-load-improved生成配置
+2. 配置保存到文件（供参考）
+3. **需要手动重启gpt-load服务**
+4. gpt-load从数据库加载配置
+
+```bash
+# 重启gpt-load
+docker-compose restart gpt-load
 ```
 
 ### 负载均衡策略
@@ -315,43 +314,61 @@ model_redirects:
 
 ## uni-api配置
 
-uni-api配置由系统自动生成，位于`config/uni-api.yaml`。
+uni-api配置通过`api.yaml`文件，由uni-load-improved自动生成。
+
+### 配置文件位置
+
+```bash
+# Docker部署
+./data/config/api.yaml
+
+# 容器内路径
+/home/api.yaml  # uni-api容器内的配置文件路径
+```
 
 ### 配置结构
 
 ```yaml
 # Provider配置
 providers:
-  - provider: gpt-4
-    base_url: http://localhost:3001/proxy/gpt-4
-    api: openai
-    models: [gpt-4]
-    enabled: true
+  - provider: gptload-gpt-4
+    base_url: http://gpt-load:3001/proxy/gpt-4
+    api: sk-dummy-key  # uni-api需要一个API key，但实际不使用
+    model:
+      - gpt-4
   
-  - provider: gpt-3.5-turbo
-    base_url: http://localhost:3001/proxy/gpt-3.5-turbo
-    api: openai
-    models: [gpt-3.5-turbo]
-    enabled: true
+  - provider: gptload-gpt-3.5-turbo
+    base_url: http://gpt-load:3001/proxy/gpt-3.5-turbo
+    api: sk-dummy-key
+    model:
+      - gpt-3.5-turbo
 
-# API配置
-api:
-  port: 8000
-  bind: "0.0.0.0"
-  workers: 4
-  log_level: "info"
-  timeout: 60
+# API密钥配置（可选）
+api_keys:
+  - api: sk-your-custom-key
+    model: ["*"]  # 允许访问所有模型
+```
 
-# 认证配置
-auth:
-  enabled: false
-  api_keys: []
+### 配置更新流程
 
-# 限流配置
-rate_limit:
-  enabled: true
-  requests_per_minute: 60
-  burst: 10
+1. uni-load-improved生成api.yaml
+2. 文件保存到共享卷
+3. **需要重启uni-api服务**
+4. uni-api加载新配置
+
+```bash
+# 重启uni-api
+docker-compose restart uni-api
+```
+
+### 环境变量
+
+```bash
+# uni-api容器环境变量
+TZ=Asia/Shanghai
+
+# 可选：通过URL加载配置
+CONFIG_URL=http://your-server/api.yaml
 ```
 
 ---
