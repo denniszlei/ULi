@@ -1,0 +1,53 @@
+# uni-load-improved 示例配置文件
+# 复制此文件为 config.yaml 并修改配置
+
+version: "1.0"
+
+# 基础配置
+server:
+  host: "0.0.0.0"
+  port: 8080
+  debug: false
+
+# 集成服务配置
+services:
+  gpt_load:
+    mode: "internal"  # internal | external
+    url: "http://localhost:3001"  # external模式时使用
+    config_path: "/app/config/gpt-load.yaml"
+  
+  uni_api:
+    mode: "internal"  # internal | external
+    url: "http://localhost:8000"  # external模式时使用
+    config_path: "/app/config/uni-api.yaml"
+
+# 健康检查配置
+health_check:
+  enabled: true
+  interval: 300  # 秒
+  timeout: 30
+  retry: 3
+
+# 模型标准化规则
+normalization:
+  rules:
+    - pattern: "-\\d{8}$"
+      replacement: ""
+    - pattern: "-preview$"
+      replacement: ""
+    - pattern: "-\\d{4}$"
+      replacement: ""
+  lowercase: true
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "json"
+  file: "/app/logs/uni-load.log"
+
+# 安全配置
+security:
+  # API密钥加密密钥（生产环境请修改）
+  encryption_key: "your-encryption-key-here-change-in-production"
+  # API访问密钥（可选）
+  api_key: ""

@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  uni-load-improved:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    image: uni-load-improved:latest
+    container_name: uni-load-improved
+    restart: unless-stopped
+    
+    ports:
+      - "${UNI_LOAD_PORT:-8080}:8080"  # uni-load-improved Web UI
+      - "${GPT_LOAD_PORT:-3001}:3001"  # gpt-load
+      - "${UNI_API_PORT:-8000}:8000"   # uni-api
+    
+    volumes:
+      # 配置文件
+      - ./data/config:/app/config
+      # 数据持久化
+      - ./data/db:/app/data
+      # 日志
+      - ./data/logs:/app/logs
+      # 备份
+      - ./data/backups:/app/backups
+    
+    environment:
+      # 基础配置
+      - UNI_LOAD_HOST=0.0.0.0
+      - UNI_LOAD_PORT=8080
+      - UNI_LOAD_DEBUG=${DEBUG:-false}
+      
+      # 服务模式 (internal | external)
+      - GPT_LOAD_MODE=${GPT_LOAD_MODE:-internal}
+      - UNI_API_MODE=${UNI_API_MODE:-internal}
+      
+      # 外部服务URL（仅在external模式下使用）
+      - GPT_LOAD_URL=${GPT_LOAD_URL:-http://localhost:3001}
+      - UNI_API_URL=${UNI_API_URL:-http://localhost:8000}
+      
+      # 数据库配置
+      - DATABASE_URL=${DATABASE_URL:-sqlite:////app/data/uni-load.db}
+      
+      # 健康检查配置
+      - HEALTH_CHECK_ENABLED=${HEALTH_CHECK_ENABLED:-true}
+      - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-300}
+      - HEALTH_CHECK_TIMEOUT=${HEALTH_CHECK_TIMEOUT:-30}
+      - HEALTH_CHECK_RETRY=${HEALTH_CHECK_RETRY:-3}
+      
+      # 日志配置
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - LOG_FILE=/app/logs/uni-load.log
+      
+      # 安全配置
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
+      - API_KEY=${API_KEY:-}
+      
+      # 性能配置
+      - WORKERS=${WORKERS:-4}
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-100}
+      - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-60}
+    
+    env_file:
+      - .env
+    
+    healthcheck:
+      test: ["CMD", "/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - uni-load-network
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  uni-load-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  config:
+    driver: local
+  db:
+    driver: local
+  logs:
+    driver: local
+  backups:
+    driver: local

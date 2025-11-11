@@ -1,0 +1,35 @@
+# docker-compose覆盖配置示例
+# 用于开发环境的特殊配置
+# 复制此文件为 docker-compose.override.yml 使用
+
+version: '3.8'
+
+services:
+  uni-load-improved:
+    # 开发环境配置
+    environment:
+      - UNI_LOAD_DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - WORKERS=1
+    
+    # 开发环境端口映射
+    ports:
+      - "8080:8080"
+      - "3001:3001"
+      - "8000:8000"
+      - "5678:5678"  # Python调试端口
+    
+    # 开发环境卷挂载（支持热重载）
+    volumes:
+      - ../backend:/app/backend
+      - ../frontend/src:/app/frontend/src
+      - ../config:/app/config
+      - ../data:/app/data
+      - ../logs:/app/logs
+    
+    # 开发环境命令（启用热重载）
+    command: >
+      bash -c "
+        cd /app/backend &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+      "
